@@ -745,8 +745,32 @@ Executor::wait_for_work(std::chrono::nanoseconds timeout)
     }
   }
 
+  int64_t min_timeout = timeout.count() >= 0 ? timeout.count() : INT64_MAX;
+  if (min_timeout != 0) {
+    for (int i=0; i<(int)wait_set_.size_of_timers; i++) {
+      if (wait_set_.timers[i]) {
+        int64_t time_until_next_call;
+        rcl_ret_t ret = rcl_timer_get_time_until_next_call(wait_set_.timers[i], &time_until_next_call);
+        if (ret != RCL_RET_OK) {
+  	 throw_from_rcl_error(ret, "Couldn't get time until next call");
+        }
+	if (time_until_next_call < 0) {
+	  min_timeout = 0;
+	  break;
+	}
+
+	if (time_until_next_call < min_timeout) {
+  	  min_timeout = time_until_next_call;
+        }
+      }
+    }
+  }
+
+  printf("KSJ: call rcl_wait, min_timeout=%ld\n", min_timeout);
   rcl_ret_t status =
-    rcl_wait(&wait_set_, std::chrono::duration_cast<std::chrono::nanoseconds>(timeout).count());
+    // rcl_wait(&wait_set_, std::chrono::duration_cast<std::chrono::nanoseconds>(timeout).count());
+    rcl_wait(&wait_set_, min_timeout);
+  printf("KSJ: rcl_wait returns %d\n", status);
   if (status == RCL_RET_WAIT_SET_EMPTY) {
     RCUTILS_LOG_WARN_NAMED(
       "rclcpp",
